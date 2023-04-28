@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>日本の地域別将来推計人口（市区町村別）</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <!--<link href="https://api.mapbox.com/mapbox-gl-js/v2.4.1/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.4.1/mapbox-gl.js"></script>-->
+    <!-- MapLibre -->
+    <script src='https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js'></script>
+    <link href='https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css' rel='stylesheet' />
+    <script src="https://unpkg.com/pmtiles@2.7.0/dist/index.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <style>
+        .map-overlay {
+            font: 12px/14px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            position: absolute;
+            width: 200px;
+            top: 0;
+            left: 0;
+            padding: 10px;
+        }
+
+        .map-overlay .map-overlay-inner {
+            background-color: #fff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .map-overlay h2 {
+            line-height: 12px;
+            display: block;
+            margin: 0 0 5px;
+        }
+
+        .map-overlay .legend .bar {
+            height: 10px;
+            width: 100%;
+            background: linear-gradient(to right, #CCFFCC, #00ff00);
+        }
+
+        .map-overlay input {
+            background-color: transparent;
+            display: inline-block;
+            width: 100%;
+            position: relative;
+            margin: 0;
+            cursor: ew-resize;
+        }
+
+        .legend {
+            background-color: #fff;
+            border-radius: 3px;
+            bottom: 40px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+            font: 12px/14px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            padding: 10px;
+            position: absolute;
+            right: 10px;
+            z-index: 1;
+            line-height: 10px;
+            height: auto;
+        }
+
+        .legend h4 {
+            margin: 0 0 10px;
+        }
+
+        .legend div span {
+            border-radius: 50%;
+            display: inline-block;
+            height: 15px;
+            margin-right: 10px;
+            width: 15px;
+            color: orangered
+        }
+
+        .square {
+            width: 15px;
+            height: 15px;
+            /*border-radius: 4px;*/
+        }
+    </style>
+
+    <div id="map"></div>
+
+    <div class="map-overlay top">
+        <div class="map-overlay-inner">
+            <h4>日本の地域別将来推計人口<br>（2015～2045年）</h4>
+            <!--使用データ：<br>
+            <a href="https://www.ipss.go.jp/pp-shicyoson/j/shicyoson18/t-page.asp" target="_blank" rel="noopener">
+                国立社会保障・人口問題研究所 日本の地域別将来推計人口（平成30（2018）年推計）</a><br><br>-->
+            <b><label id="year_label"></label></b>
+            <!--<input id="slider" type="range" min="1962" max="2021" step="1" value="1962">-->
+            <input id="slider" type="range" min="2015" max="2045" step="5" value="2015">
+        </div>
+    </div>
+    <div id='county-legend' class='legend'>
+        <h4>総人口指数(2015年=100)</h4>
+        <div class="square" style='background-color: rgb(255, 0, 0); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">100超～</span><br>
+        <div class="square" style='background-color: rgb(230, 152, 0); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">90超～100以下</span><br>
+        <div class="square" style='background-color: rgb(255, 255, 0); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">80超～90以下</span><br>
+        <div class="square" style='background-color: rgb(152, 230, 0); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">70超～80以下</span><br>
+        <div class="square" style='background-color: rgb(0, 255, 255); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">60超～70以下</span><br>
+        <div class="square" style='background-color: rgb(0, 0, 255); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">～60以下</span><br>
+    </div>
+    <script src="https://d3js.org/d3.v5.min.js" charset="utf-8"></script>
+    <script>
+        // add the PMTiles plugin to the maplibregl global.
+        let protocol = new pmtiles.Protocol();
+        maplibregl.addProtocol("pmtiles", protocol.tile);
+
+        let PM_suikei_jinko_URL = "https://pmtiles-data.s3.ap-northeast-1.amazonaws.com/future-population/suikei_kekka_city.pmtiles";
+
+        const p = new pmtiles.PMTiles(PM_suikei_jinko_URL)
+        p.getMetadata().then((res) => console.log(res));
+
+        // this is so we share one instance across the JS code and the map renderer
+        protocol.add(p);
+
+        var map = new maplibregl.Map({
+            container: 'map',
+            style: 'https://tile2.openstreetmap.jp/styles/osm-bright/style.json',
+            center: [139.6226196, 35.4660694], // 中心座標
+            zoom: 6, // ズームレベル
+            pitch: 0, // 傾き
+            hash: true,
+            maplibreLogo: true,
+            // 既存Attributionを非表示
+            attributionControl: false
+        })
+
+        // Attributionを折りたたみ表示
+        map.addControl(new maplibregl.AttributionControl({
+            compact: true,
+            customAttribution: '<a href="https://www.ipss.go.jp/pp-shicyoson/j/shicyoson18/t-page.asp">国立社会保障・人口問題研究所 日本の地域別将来推計人口（平成30（2018）年推計）</a>'
+        }));
+
+        // ズーム・回転
+        map.addControl(new maplibregl.NavigationControl());
+
+        // フルスクリーンモードのオンオフ
+        map.addControl(new maplibregl.FullscreenControl());
+
+        // スケール表示
+        map.addControl(new maplibregl.ScaleControl({
+            maxWidth: 200,
+            unit: 'metric'
+        }));
+
+        function filterBy(year) {
+            const filter = ['all', ['==', '年', year.toString() + '年']];
+            map.setFilter('suikei-jinko-fill', filter);
+            map.setFilter('suikei-jinko-labels', filter);
+
+            // スライダー表示用ラベル
+            document.getElementById('year_label').textContent = year.toString() + '年';
+        }
+
+        map.on('load', function () {
+
+            /*
+            // GeoJson
+            map.addSource('suikei-jinko', {
+                'type': 'geojson',
+                'data': './suikei_kekka.geojson'
+            });
+            */
+
+            // PMTiles
+            map.addSource("pmtiles", {
+                type: "vector",
+                url: "pmtiles://" + PM_suikei_jinko_URL
+            });
+
+            //色分け用のフィルタ準備
+            let f1 = ["all", [">", ["get", "総人口指数"], 100]];
+            let f2 = ["all", [">", ["get", "総人口指数"], 90], ["<=", ["get", "総人口指数"], 100]];
+            let f3 = ["all", [">", ["get", "総人口指数"], 80], ["<=", ["get", "総人口指数"], 90]];
+            let f4 = ["all", [">", ["get", "総人口指数"], 70], ["<=", ["get", "総人口指数"], 80]];
+            let f5 = ["all", [">", ["get", "総人口指数"], 60], ["<=", ["get", "総人口指数"], 70]];
+            let f6 = ["all", ["<=", ["get", "総人口指数"], 60]];
+
+            //色分け用色の準備
+            let colors = [
+                'rgb(255, 0, 0)',
+                'rgb(230, 152, 0)',
+                'rgb(255, 255, 0)',
+                'rgb(152, 230, 0)',
+                'rgb(0, 255, 255)',
+                'rgb(0, 0, 255)',
+            ]
+
+            // 推計人口ポリゴン
+            map.addLayer({
+                'id': 'suikei-jinko-fill',
+                'type': 'fill-extrusion',
+                'source': 'pmtiles',
+                'source-layer': "suikei_kekka_cityfgb",
+                'layout': {},
+                'paint': {
+                    'fill-extrusion-color': [
+                        "case",
+                        f1, colors[0],
+                        f2, colors[1],
+                        f3, colors[2],
+                        f4, colors[3],
+                        f5, colors[4],
+                        f6, colors[5],
+                        colors[5]
+                    ],
+                    'fill-extrusion-height': ["/", ['to-number', ["get", "総数"]], 80],
+                    'fill-extrusion-opacity': 0.7
+                }
+            });
+
+            // 推計人口ライン
+            map.addLayer({
+                'id': 'suikei-jinko-line',
+                'type': 'line',
+                'source': 'pmtiles',
+                'source-layer': "suikei_kekka_cityfgb",
+                'paint': {
+                    'line-color': 'rgba(255, 255, 255, 1)',
+                    'line-width': 0.5,
+                    'line-opacity': 0.5
+                }
+            });
+
+            // 推計人口ラベル
+            map.addLayer({
+                'id': 'suikei-jinko-labels',
+                'type': 'symbol',
+                'source': 'pmtiles',
+                'source-layer': "suikei_kekka_cityfgb",
+                'layout': {
+                    'text-field': ['concat', ['get', '市区町村'], '\n', ['to-string', ['get', '総数万人']]],
+                    'text-offset': [0, -0.6],
+                    'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                    'text-size': 8,
+                    'text-anchor': 'top',
+                    'symbol-placement': 'point',
+                    'text-allow-overlap': false,
+                    'symbol-spacing': 1000
+                },
+                'paint': {
+                    'text-color': 'rgba(0, 0, 0, 1)',
+                    'text-halo-blur': 1,
+                    'text-halo-color': 'rgba(255, 255, 255, 1)',
+                    'text-halo-width': 1
+                }
+            });
+
+            /*
+            // ラベル（都道府県名と人口総数）
+            map.addLayer({
+                'id': 'pref-jinko-labels',
+                'type': 'symbol',
+                'source': 'suikei-jinko',
+                'layout': {
+                    'text-field': [
+                        'format',
+                        ['upcase', ['get', '都道府県']],
+                        { 'font-scale': 0.8 },
+                        '\n',
+                        {},
+                        ['downcase', ['get', '総数万人']],
+                        { 'font-scale': 0.6 }
+                    ],
+                    'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                    // 'text-size': 14
+                    'text-offset': [0, 0.6],
+                    'text-anchor': 'top'
+                },
+                'paint': {
+                    'text-color': 'rgba(255, 255, 255, 1)'
+                }
+            });
+            */
+
+            /*
+            // ラベル（都道府県名）
+            map.addLayer({
+                'id': 'pref-labels',
+                'type': 'symbol',
+                'source': 'suikei-jinko',
+                'layout': {
+                    'text-field': ['to-string', ['get', '都道府県']],
+                    'text-offset': [0, 0.6],
+                    'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                    'text-size': 14,
+                    'text-anchor': 'top'
+                },
+                'paint': {
+                    'text-color': 'rgba(255, 255, 255, 1)'
+                }
+            });
+            */
+
+
+            /*
+            // PMTiles
+            map.addSource("geojson", {
+                type: "geojson",
+                data: "https://pmtiles-data.s3.ap-northeast-1.amazonaws.com/future-population/suikei_kekka_pref_point.geojson"
+            });
+            */
+
+            // ラベル（人口総数）
+            /*
+            map.addLayer({
+                'id': 'jinko-labels',
+                'type': 'symbol',
+                'source': 'pmtiles',
+                'source-layer': 'suikei_kekka',
+                'layout': {
+                    // 'text-field': ['to-string', ['get', '都道府県']],
+                    'text-field': ['to-string', ['get', '総数万人']],
+                    'text-offset': [0, -0.6],
+                    'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                    'text-size': 14,
+                    'text-anchor': 'top',
+                    'symbol-placement': 'point',
+                    'text-allow-overlap': false
+                },
+                'paint': {
+                    // 'text-color': 'rgba(255, 255, 255, 1)'
+                    'text-color': 'rgba(0, 0, 0, 1)'
+                }
+            });
+            */
+
+            /*
+            map.addLayer({
+                'id': 'jinko-labels',
+                'type': 'symbol',
+                'source': 'geojson',
+                'layout': {
+                    'text-field': ['concat', ['get', '都道府県'], '\n', ['to-string', ['get', '総数万人']]],
+                    'text-offset': [0, -0.6],
+                    'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                    'text-size': 12,
+                    'text-anchor': 'top',
+                    'symbol-placement': 'point',
+                    'text-allow-overlap': false,
+                    'symbol-spacing': 1000
+                },
+                'paint': {
+                    'text-color': 'rgba(0, 0, 0, 1)',
+                    'text-halo-blur': 1,
+                    'text-halo-color': 'rgba(255, 255, 255, 1)',
+                    'text-halo-width': 2
+                }
+            });
+            */
+
+            // フィルター実行
+            filterBy(2015); // 初期表示
+            document.getElementById('slider').addEventListener('input', (e) => {
+                const year = parseInt(e.target.value, 10); // スライダーで選択した年次を整数化
+                filterBy(year);
+            });
+
+        });
+    </script>
+
+</body>
+
+</html>
