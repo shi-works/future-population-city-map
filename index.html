@@ -134,7 +134,7 @@
         let protocol = new pmtiles.Protocol();
         maplibregl.addProtocol("pmtiles", protocol.tile);
 
-        let PM_suikei_jinko_URL = "https://pmtiles-data.s3.ap-northeast-1.amazonaws.com/future-population/suikei_kekka_city.pmtiles";
+        let PM_suikei_jinko_URL = "https://xs489works.xsrv.jp/pmtiles-data/future-population/suikei_kekka_city.pmtiles";
 
         const p = new pmtiles.PMTiles(PM_suikei_jinko_URL)
         p.getMetadata().then((res) => console.log(res));
